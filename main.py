@@ -1,3 +1,24 @@
+import sqlite3
+
+
+def init_db():
+    conn = sqlite3.connect("contacts.db")
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+    CREATE TABLE IF NOT EXISTS contacts(
+                   id INTEGER PRIMARY KEY AUTOINCREMENT,
+                   name TEXT NOT NULL,
+                   phone TEXT NOT NULL UNIQUE,
+                   email TEXT UNIQUE
+                   )
+"""
+    )
+    conn.commit()
+    conn.close()
+
+
 print("--------- Contact Manager App ----------")
 
 next_id = 1
@@ -5,132 +26,182 @@ contacts = []
 
 
 def view_all_contact():
-    if not contacts:
-        print("No contacts available!")
-        return
+    try:
+        conn = sqlite3.connect("contacts.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT id,name,phone,email FROM contacts")
+        rows = cursor.fetchall()
 
-    else:
-        for index, contact in enumerate(contacts, start=1):
-            print(
-                f"{index}. {contact['name']} {contact['phone_no']} (ID: {contact['id']}) "
-            )
+        if not rows:
+            print("No contacts available!")
+            return
+
+        for row in rows:
+            contact_id, name, phone, email = row
+            email_display = email if email else "N/A"
+            print(f"ID: {contact_id} | {name} | {phone} | {email_display}")
+
+    except sqlite3.Error as e:
+        print("Failed to fetch contacts.")
+        print("Error:", e)
+
+    finally:
+        conn.close()
 
 
 def add_contact():
-    global next_id
-
-    name = input("Enter contact name:\n")
-    phone = input("Enter phone number:\n")
+    name = input("Enter contact name:\n").strip()
+    phone = input("Enter phone number:\n").strip()
+    email = input("Enter email (optional):\n").strip()
 
     if not name or not phone:
         print("Name and phone can not be empty!")
         return
 
-    contact = {"id": next_id, "name": name, "phone_no": phone}
-    contacts.append(contact)
-    next_id += 1
-    print("Contact added successfully.")
+    try:
+        conn = sqlite3.connect("contacts.db")
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "INSERT INTO contacts (name,phone,email) VALUES (?,?,?)",
+            (name, phone, email if email else None),
+        )
+        conn.commit()
+        conn.close()
+    except sqlite3.IntegrityError:
+        print("This email already exists!")
+
+    finally:
+        conn.close()
 
 
 def update_contact():
-    if not contacts:
-        print("No contact avialable to update!")
+    contact_id = input("Enter contact ID to update:\n").strip()
+
+    if not contact_id.isdigit():
+        print("Invalid ID!")
         return
-
-    view_all_contact()
-
-    try:
-        serial = int(input("Enter serial number to update contact:\n"))
-    except ValueError:
-        print("Invalid input! Please enter a number.")
-        return
-
-    if serial < 1 or serial > len(contacts):
-        print("Invalid serial number!")
-        return
-
-    contact = contacts[serial - 1]
-
     print("What do you want to update?")
     print("1. Name")
-    print("2. phone number")
+    print("2. Phone")
+    print("3. Email")
 
-    user_input = input("Enter your choice:\n")
-    if user_input == "1":
-        new_name = input("Enter new name:\n").strip()
-        if new_name:
-            contact["name"] = new_name
-            print("Name updated successfully!")
-        else:
-            print("Name can not be empty!")
-    elif user_input == "2":
-        new_phone = input("Enter new phone number:\n").strip()
-        if new_phone:
-            contact["phone_no"] = new_phone
-            print("Phone number updated successfully!")
-        else:
-            print("Phone number can not be empty")
-    else:
+    choice = input("Enter your choice:\n").strip()
+
+    field_map = {"1": "name", "2": "phone", "3": "email"}
+
+    if choice not in field_map:
         print("Invalid choice!")
+        return
+    new_value = input("Enter new value:\n").strip()
+
+    if choice in {"1", "2"} and not new_value:
+        print("This field cannot be empty!")
+        return
+
+    if choice == "3" and not new_value:
+        new_value = None
+
+    field = field_map[choice]
+
+    try:
+        conn = sqlite3.connect("contacts.db")
+        cursor = conn.cursor()
+
+        cursor.execute(
+            f"UPDATE contacts SET {field} = ? WHERE id = ?", (new_value, contact_id)
+        )
+
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            print("No contact found with this ID.")
+        else:
+            print("Contact updated successfully.")
+    except sqlite3.IntegrityError:
+        print("This email already exists.")
+
+    except sqlite3.Error as e:
+        print("Error", e)
+
+    finally:
+        conn.close()
+
 
 
 def delete_contact():
-    if not contacts:
-        print("No contacts available to delete!")
-        return
+    contact_id = input("Enter contact ID to delete:\n").strip()
 
-    view_all_contact()
+    if not contact_id.isdigit():
+        print("Invalid ID!")
+        return
 
     try:
-        del_input = int(input("Enter serial number to delete contact:\n"))
-    except ValueError:
-        print("Invalid input! Please enter a number.")
-        return
+        conn = sqlite3.connect("contacts.db")
+        cursor = conn.cursor()
 
-    if del_input < 1 or del_input > len(contacts):
-        print("Invalid serial number!")
-        return
+        cursor.execute("DELETE FROM contacts WHERE id = ?", (contact_id,))
 
-    deleted = contacts.pop(del_input - 1)
-    print(f"Contact '{deleted['name']}' deleted successfully.")
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            print("No contact found with this ID.")
+        else:
+            print("Contact deleted successfully.")
+
+    except sqlite3.Error as e:
+        print("Deletion failed.")
+        print("Error:", e)
+
+    finally:
+        conn.close()
 
 
 def search_contact():
-    if not contacts:
-        print("No contacts avaiable to search!")
-        return
-
     print("1. Search by name")
     print("2. search by phone number")
-    search_input = input("Enter your choice:\n")
-    found = False
-
-    if search_input == "1":
-        search_name_input = input("Enter name to search:\n").strip().lower()
-        for contact in contacts:
-            if search_name_input in contact["name"].lower():
-                print(
-                    f"{contact['name']} - {contact['phone_no']} (ID: {contact['id']})"
-                )
-                found = True
-
-    elif search_input == "2":
-        search_phone_input = input("Enter phone number to search:\n").strip().lower()
-        for contact in contacts:
-            if search_phone_input in contact["phone_no"]:
-                print(
-                    f"{contact['name']} - {contact['phone_no']} (ID: {contact['id']})"
-                )
-
-    else:
+    print("3. search by email ")
+    choice = input("Enter your choice:\n")
+    if choice not in {"1", "2", "3"}:
         print("Invalid choice!")
         return
 
-    if not found:
-        print("No matching contact found.")
+    keyword = input("Enter search value:\n").strip()
+    if not keyword:
+        print("Search value can not be empty!")
+        return
+
+    column_map = {"1": "name", "2": "phone", "3": "email"}
+
+    column = column_map[choice]
+
+    try:
+        conn = sqlite3.connect("contacts.db")
+        cursor = conn.cursor()
+
+        cursor.execute(
+            f"SELECT id,name,phone,email FROM contacts WHERE {column} LIKE ?",
+            (f"%{keyword}%",),
+        )
+
+        rows = cursor.fetchall()
+
+        if not rows:
+            print("No matching contact found.")
+            return
+
+        for contact_id, name, phone, email in rows:
+            email_display = email if email else "N/A"
+            print(f"ID: {contact_id} | {name} | {phone} | {email_display}")
+    except sqlite3.Error as e:
+        print("Error", e)
+
+    finally:
+        conn.close()
 
 
 def main():
+    init_db()
     while True:
         print("\n-----------------")
         print("1. Add contact")
